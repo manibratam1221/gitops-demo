@@ -12,6 +12,10 @@ jobs:
 
     runs-on: self-hosted
 
+    concurrency:
+      group: production-promotion
+      cancel-in-progress: false
+
     environment:
       name: production
 
@@ -45,20 +49,26 @@ jobs:
           kargo version
 
       - name: Login to Kargo
+        
         run: |
+          set -euo pipefail
           kargo login \
             "${{ secrets.KARGO_SERVER }}" \
             --token "${{ secrets.KARGO_TOKEN }}" \
             --insecure-skip-tls-verify
+            
+          kargo project list  
+          kargo stage list -p "${PROJECT}"
 
       - name: Save Commit SHA
         run: |
+          set -euo pipefail
           echo "COMMIT_SHA=${GITHUB_SHA}" >> $GITHUB_ENV
 
       - name: Wait for Matching Freight
         shell: bash
         run: |
-
+          set -euo pipefail
           echo "Waiting for Freight for commit ${COMMIT_SHA}"
 
           ATTEMPTS=30
@@ -66,12 +76,12 @@ jobs:
           until [ $ATTEMPTS -eq 0 ]
           do
 
-            FREIGHT=$(kubectl get freight -n kargo -o json \
+            FREIGHT=$(kubectl get freight -n gitops-demo -o json \
             | jq -r --arg SHA "$COMMIT_SHA" '
                 .items[]
                 | select(
-                    any(.status.commits[]?; .id==$SHA)
-                  )
+                    any(.commits[]?; .id==$SHA)
+                )
                 | .metadata.name
               ' | head -n1)
 
@@ -99,43 +109,77 @@ jobs:
 
       - name: Display Freight
         run: |
+          set -euo pipefail
           echo "Freight = ${FREIGHT_NAME}"
 
       - name: Promote Freight
         run: |
-
+          set -euo pipefail
           kargo promote \
             -p "${PROJECT}" \
             --stage "${STAGE}" \
             --freight "${FREIGHT_NAME}" \
             --insecure-skip-tls-verify
+            
 
       - name: Wait for Promotion
         run: |
-
+          set -euo pipefail
           echo "Waiting for Promotion..."
 
-          sleep 5
+          for i in {1..30}; do
+            PROMOTION=$(kubectl get promotions -n gitops-demo -o json \
+              | jq -r --arg F "$FREIGHT_NAME" '
+              .items
+              | map(select(.spec.freight == $F))
+              | sort_by(.metadata.creationTimestamp)
+              | last
+              | .metadata.name
+              ')
+          
+            if [[ -n "$PROMOTION" ]]; then
+              echo "Promotion found: $PROMOTION"
+              break
+            fi
+          
+            sleep 2
+          done
+      
+          if [[ -z "$PROMOTION" ]]; then
+            echo "Promotion not found."
+            exit 1
+          fi 
 
-          kubectl get promotions -n gitops-demo
-
+          
           kubectl wait \
-            --for=jsonpath='{.status.phase}'=Succeeded \
-            promotion \
-            --all \
-            -n gitops-demo \
-            --timeout=300s
+                promotion/$PROMOTION \
+                -n gitops-demo \
+                --for=jsonpath='{.status.phase}'=Succeeded \
+                --timeout=300s
+
+          kubectl get promotion "$PROMOTION" \
+                                  -n gitops-demo \
+                                  -o wide      
 
       - name: Verify ArgoCD
         run: |
-
-          kubectl get applications -n argocd
-
+          set -euo pipefail
+         
           kubectl wait \
             application/prod-app \
             -n argocd \
             --for=jsonpath='{.status.health.status}'=Healthy \
             --timeout=300s
+          
+          SYNC=$(kubectl get application prod-app \
+                -n argocd \
+                -o jsonpath='{.status.sync.status}')
+
+          if [[ "$SYNC" != "Synced" ]]; then
+           echo "Application is not Synced"
+           exit 1
+          fi       
+
 
       - name: Success
         run: |
