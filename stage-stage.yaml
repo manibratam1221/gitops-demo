@@ -1,0 +1,19 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: stage
+  namespace: gitops-demo
+
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: gitops-demo
+    sources:
+      direct: true
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: update-prod
+          as: update-prod
