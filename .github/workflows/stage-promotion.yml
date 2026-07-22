@@ -9,82 +9,134 @@ on:
 
 jobs:
   promote:
+
     runs-on: self-hosted
 
     environment:
       name: production
 
+    env:
+      PROJECT: gitops-demo
+      STAGE: stage
+
     steps:
-      - name: Checkout
+
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Configure kubectl
+      - name: Verify Cluster Connectivity
         run: |
           kubectl version --client
           kubectl get nodes
+          kubectl get stages -n kargo
+          kubectl get freight -n kargo
 
-      - name: Get Commit SHA
+      - name: Install Kargo CLI
+        run: |
+          if ! command -v kargo >/dev/null 2>&1; then
+            curl -L \
+              https://github.com/akuity/kargo/releases/latest/download/kargo-linux-amd64 \
+              -o kargo
+
+            chmod +x kargo
+            sudo mv kargo /usr/local/bin/
+          fi
+
+          kargo version
+
+      - name: Login to Kargo
+        run: |
+          kargo login \
+            "${{ secrets.KARGO_SERVER }}" \
+            --token "${{ secrets.KARGO_TOKEN }}" \
+            --insecure-skip-tls-verify
+
+      - name: Save Commit SHA
         run: |
           echo "COMMIT_SHA=${GITHUB_SHA}" >> $GITHUB_ENV
 
-          - name: Wait for matching Freight
-            shell: bash
-            run: |
-              echo "Waiting for Freight for commit ${COMMIT_SHA}"
-              for i in {1..30}; do
-              FREIGHT=$(kubectl get freight -n kargo -o json \
-              | jq -r --arg SHA "$COMMIT_SHA" '
+      - name: Wait for Matching Freight
+        shell: bash
+        run: |
+
+          echo "Waiting for Freight for commit ${COMMIT_SHA}"
+
+          ATTEMPTS=30
+
+          until [ $ATTEMPTS -eq 0 ]
+          do
+
+            FREIGHT=$(kubectl get freight -n kargo -o json \
+            | jq -r --arg SHA "$COMMIT_SHA" '
                 .items[]
                 | select(
-                    .status.commits[]?.id == $SHA
+                    any(.status.commits[]?; .id==$SHA)
                   )
-              | .metadata.name' | head -1)
+                | .metadata.name
+              ' | head -n1)
 
             if [[ -n "$FREIGHT" ]]; then
-               echo "FREIGHT_NAME=$FREIGHT" >> $GITHUB_ENV
+
+              echo "Matching Freight Found : $FREIGHT"
+
+              echo "FREIGHT_NAME=$FREIGHT" >> $GITHUB_ENV
+
               exit 0
+
             fi
+
+            echo "No Freight yet..."
+
+            ATTEMPTS=$((ATTEMPTS-1))
 
             sleep 10
 
           done
 
+          echo "Timed out waiting for Freight."
+
           exit 1
 
-      - name: Promote
+      - name: Display Freight
         run: |
+          echo "Freight = ${FREIGHT_NAME}"
+
+      - name: Promote Freight
+        run: |
+
           kargo promote \
-            -p gitops-demo \
-            --stage stage \
+            -p "${PROJECT}" \
+            --stage "${STAGE}" \
             --freight "${FREIGHT_NAME}" \
             --insecure-skip-tls-verify
 
-      - name: Create Promotion
-        shell: bash
+      - name: Wait for Promotion
         run: |
 
-          cat <<EOF | kubectl apply -f -
+          echo "Waiting for Promotion..."
 
-          apiVersion: kargo.akuity.io/v1alpha1
-          kind: Promotion
+          sleep 5
 
-          metadata:
-            generateName: github-promotion-
-
-          spec:
-            stage: stage
-            freight: ${FREIGHT_NAME}
-
-          EOF
-
-      - name: Watch Promotion
-        run: |
-
-          kubectl get promotions -A
+          kubectl get promotions -n kargo
 
           kubectl wait \
             --for=jsonpath='{.status.phase}'=Succeeded \
             promotion \
             --all \
             -n kargo \
-            --timeout=5m
+            --timeout=300s
+
+      - name: Verify ArgoCD
+        run: |
+
+          kubectl get applications -n argocd
+
+          kubectl wait \
+            application/prod-app \
+            -n argocd \
+            --for=jsonpath='{.status.health.status}'=Healthy \
+            --timeout=300s
+
+      - name: Success
+        run: |
+          echo "Production Promotion Successful 🚀"
