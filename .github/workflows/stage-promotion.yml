@@ -28,8 +28,8 @@ jobs:
         run: |
           kubectl version --client
           kubectl get nodes
-          kubectl get stages -n kargo
-          kubectl get freight -n kargo
+          kubectl get stages -n gitops-demo
+          kubectl get freight -n gitops-demo
 
       - name: Install Kargo CLI
         run: |
@@ -117,13 +117,13 @@ jobs:
 
           sleep 5
 
-          kubectl get promotions -n kargo
+          kubectl get promotions -n gitops-demo
 
           kubectl wait \
             --for=jsonpath='{.status.phase}'=Succeeded \
             promotion \
             --all \
-            -n kargo \
+            -n gitops-demo \
             --timeout=300s
 
       - name: Verify ArgoCD
