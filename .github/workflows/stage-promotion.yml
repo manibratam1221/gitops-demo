@@ -8,53 +8,83 @@ on:
       - "stage/**"
 
 jobs:
-
   promote:
-
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     environment:
       name: production
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Kargo CLI
+      - name: Configure kubectl
         run: |
-          curl -L https://github.com/akuity/kargo/releases/latest/download/kargo-linux-amd64 \
-            -o kargo
-          chmod +x kargo
-          sudo mv kargo /usr/local/bin/
+          kubectl version --client
+          kubectl get nodes
 
-      - name: Login
+      - name: Get Commit SHA
         run: |
-          kargo login \
-            ${{ secrets.KARGO_SERVER }} \
-            --token ${{ secrets.KARGO_TOKEN }}
+          echo "COMMIT_SHA=${GITHUB_SHA}" >> $GITHUB_ENV
 
-      - name: Wait for Freight
-        run: |
-          echo "Waiting for Freight..."
+          - name: Wait for matching Freight
+            shell: bash
+            run: |
+              echo "Waiting for Freight for commit ${COMMIT_SHA}"
+              for i in {1..30}; do
+              FREIGHT=$(kubectl get freight -n kargo -o json \
+              | jq -r --arg SHA "$COMMIT_SHA" '
+                .items[]
+                | select(
+                    .status.commits[]?.id == $SHA
+                  )
+              | .metadata.name' | head -1)
 
-          for i in {1..30}; do
-
-            FREIGHT=$(kargo get freight \
-              -p gitops-demo \
-              -o json | jq -r '.[0].metadata.name')
-
-            if [ "$FREIGHT" != "" ]; then
-              echo "Freight found: $FREIGHT"
-              break
+            if [[ -n "$FREIGHT" ]]; then
+               echo "FREIGHT_NAME=$FREIGHT" >> $GITHUB_ENV
+              exit 0
             fi
 
             sleep 10
 
           done
 
+          exit 1
+
       - name: Promote
         run: |
           kargo promote \
             -p gitops-demo \
-            --stage stage
+            --stage stage \
+            --freight "${FREIGHT_NAME}" \
+            --insecure-skip-tls-verify
+
+      - name: Create Promotion
+        shell: bash
+        run: |
+
+          cat <<EOF | kubectl apply -f -
+
+          apiVersion: kargo.akuity.io/v1alpha1
+          kind: Promotion
+
+          metadata:
+            generateName: github-promotion-
+
+          spec:
+            stage: stage
+            freight: ${FREIGHT_NAME}
+
+          EOF
+
+      - name: Watch Promotion
+        run: |
+
+          kubectl get promotions -A
+
+          kubectl wait \
+            --for=jsonpath='{.status.phase}'=Succeeded \
+            promotion \
+            --all \
+            -n kargo \
+            --timeout=5m
