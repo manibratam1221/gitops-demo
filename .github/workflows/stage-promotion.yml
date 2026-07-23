@@ -54,7 +54,7 @@ jobs:
           set -euo pipefail
           kargo login \
             "${{ secrets.KARGO_SERVER }}" \
-            --token "${{ secrets.KARGO_TOKEN }}" \
+            --kubeconfig \
             --insecure-skip-tls-verify
             
           kargo project list  
