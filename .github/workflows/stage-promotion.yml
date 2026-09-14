@@ -25,17 +25,8 @@ jobs:
 
     steps:
 
-      # ------------------------------------------------------------
-      # 1. Checkout
-      # ------------------------------------------------------------
-
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-
-      # ------------------------------------------------------------
-      # 2. Verify Kubernetes connectivity
-      # ------------------------------------------------------------
 
       - name: Verify Cluster Connectivity
         run: |
@@ -45,11 +36,6 @@ jobs:
           kubectl get nodes
           kubectl get stages -n "${PROJECT}"
           kubectl get freight -n "${PROJECT}"
-
-
-      # ------------------------------------------------------------
-      # 3. Install Kargo CLI
-      # ------------------------------------------------------------
 
       - name: Install Kargo CLI
         run: |
@@ -66,11 +52,6 @@ jobs:
 
           kargo version
 
-
-      # ------------------------------------------------------------
-      # 4. Login to Kargo
-      # ------------------------------------------------------------
-
       - name: Login to Kargo
         run: |
           set -euo pipefail
@@ -85,11 +66,6 @@ jobs:
           kargo project list
           kargo stage list -p "${PROJECT}"
 
-
-      # ------------------------------------------------------------
-      # 5. Capture Git commit
-      # ------------------------------------------------------------
-
       - name: Save Commit SHA
         run: |
           set -euo pipefail
@@ -98,14 +74,6 @@ jobs:
 
           echo "Commit SHA:"
           echo "${GITHUB_SHA}"
-
-
-      # ------------------------------------------------------------
-      # 6. Generate release identity
-      #
-      # Example:
-      # release-2026.09.14-42
-      # ------------------------------------------------------------
 
       - name: Generate Release Identity
         run: |
@@ -116,11 +84,6 @@ jobs:
           echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
 
           echo "Release Identity: ${RELEASE_ID}"
-
-
-      # ------------------------------------------------------------
-      # 7. Wait for Freight matching Git commit
-      # ------------------------------------------------------------
 
       - name: Wait for Matching Freight
         shell: bash
@@ -168,11 +131,6 @@ jobs:
 
           exit 1
 
-
-      # ------------------------------------------------------------
-      # 8. Display release information
-      # ------------------------------------------------------------
-
       - name: Display Release Information
         run: |
           set -euo pipefail
@@ -187,46 +145,17 @@ jobs:
           echo "Stage      : ${STAGE}"
           echo "=============================================="
 
-
-      # ------------------------------------------------------------
-      # 9. Assign meaningful Freight alias
-      # ------------------------------------------------------------
-
-      - name: Assign Release Identity to Freight
-        run: |
-          set -euo pipefail
-
-          echo "Assigning Freight alias:"
-          echo "${RELEASE_ID}"
-
-          kargo update freight \
-            -p "${PROJECT}" \
-            --name "${FREIGHT_NAME}" \
-            --new-alias "${RELEASE_ID}"
-
-          echo "Freight alias assigned successfully."
-
-
-      # ------------------------------------------------------------
-      # 10. Promote Freight
-      # ------------------------------------------------------------
-
       - name: Promote Freight
         run: |
           set -euo pipefail
 
-          echo "Promoting ${RELEASE_ID} to ${STAGE}"
+          echo "Promoting Freight ${FREIGHT_NAME} to ${STAGE}"
 
           kargo promote \
             -p "${PROJECT}" \
             --stage "${STAGE}" \
-            --freight "${RELEASE_ID}" \
+            --freight "${FREIGHT_NAME}" \
             --insecure-skip-tls-verify
-
-
-      # ------------------------------------------------------------
-      # 11. Wait for Kargo Promotion
-      # ------------------------------------------------------------
 
       - name: Wait for Promotion
         run: |
@@ -279,11 +208,6 @@ jobs:
             -n "${PROJECT}" \
             -o wide
 
-
-      # ------------------------------------------------------------
-      # 12. Verify Argo CD
-      # ------------------------------------------------------------
-
       - name: Verify ArgoCD
         run: |
           set -euo pipefail
@@ -308,11 +232,6 @@ jobs:
 
           echo "Argo CD application is Healthy and Synced."
 
-
-      # ------------------------------------------------------------
-      # 13. Production release summary
-      # ------------------------------------------------------------
-
       - name: Release Summary
         run: |
           set -euo pipefail
@@ -329,4 +248,3 @@ jobs:
           echo "Status     : Healthy / Synced"
           echo "================================================"
           echo ""
-```
