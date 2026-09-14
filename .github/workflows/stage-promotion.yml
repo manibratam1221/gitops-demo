@@ -1,5 +1,5 @@
 ---
-name: Production Release Promotion
+name: Production Release Promotio
 
 on:
   push:
