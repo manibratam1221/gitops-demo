@@ -122,40 +122,25 @@ jobs:
       # ------------------------------------------------------------
       # 4. Login to Kargo
       # ------------------------------------------------------------
-
       - name: Login to Kargo
-        shell: bash
         run: |
-          set -euo pipefail
+         set -euo pipefail
+         echo "Kargo CLI:"
+         kargo version
 
-          echo "Logging into Kargo..."
+         echo "Logging into Kargo..."
+         kargo login \
+          "${{ secrets.KARGO_SERVER }}" \
+          --kubeconfig \
+          --insecure-skip-tls-verify
 
-          kargo login \
-            "${{ secrets.KARGO_SERVER }}" \
-            --kubeconfig \
-            --insecure-skip-tls-verify
+         echo "Kargo authentication successful"
 
-          echo ""
-          echo "Kargo authentication successful."
+         echo "Available projects:"
+         kargo get projects
 
-          echo ""
-          echo "Kargo CLI:"
-          kargo version
-
-          echo ""
-          echo "Available Projects:"
-          kargo get projects
-
-          echo ""
-          echo "Stages in ${PROJECT}:"
-          kargo get stages \
-            --project "${PROJECT}"
-
-          echo ""
-          echo "Current Promotions:"
-          kargo get promotions \
-            --project "${PROJECT}" \
-            --stage "${STAGE}"
+         echo "Stages in ${PROJECT}:"
+         kargo get stages --project "${PROJECT}"
 
       # ------------------------------------------------------------
       # 5. Save commit SHA
