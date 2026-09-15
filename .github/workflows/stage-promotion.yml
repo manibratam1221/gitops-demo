@@ -209,8 +209,11 @@ jobs:
       # 4. Authenticate with Kargo
       # ============================================================
 
-      - name: Login to Kargo
+      - name: Authenticate to Kargo
         shell: bash
+        env:
+          KARGO_API_ADDRESS: ${{ secrets.KARGO_SERVER }}
+          KARGO_API_TOKEN: ${{ secrets.KARGO_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -218,28 +221,36 @@ jobs:
           echo "Kargo Authentication"
           echo "=============================================="
 
+          echo ""
           echo "Kargo server:"
-          echo "${{ secrets.KARGO_SERVER }}"
+          echo "${KARGO_API_ADDRESS}"
 
           echo ""
-          echo "Logging into Kargo..."
-          
-          kargo login \
-            "${{ secrets.KARGO_SERVER }}" \
-            --kubeconfig \
-            --insecure-skip-tls-verify
+          echo "Kargo API token:"
+          echo "********"
+
+          # --------------------------------------------------------
+          # Kargo 1.11.x supports API-token authentication through
+          # KARGO_API_ADDRESS + KARGO_API_TOKEN.
+          #
+          # This is preferable for CI because we don't need an
+          # interactive login or admin password.
+          # --------------------------------------------------------
 
           echo ""
-          echo "Kargo authentication successful."
+          echo "Testing authenticated Kargo API access..."
 
-          echo ""
-          echo "Kargo projects:"
           kargo get projects
 
           echo ""
           echo "Kargo stages:"
+
           kargo get stages \
             --project "${PROJECT}"
+
+          echo ""
+          echo "✅ Kargo authentication successful."
+          echo "✅ Project access verified."
 
       # ============================================================
       # 5. Capture Git release identity
