@@ -43,7 +43,7 @@ jobs:
 
           if ! command -v kargo >/dev/null 2>&1; then
             curl -L \
-              https://github.com/akuity/kargo/releases/download/v1.10.5/kargo-linux-amd64 \
+              https://github.com/akuity/kargo/releases/download/v1.11.2/kargo-linux-amd64 \
               -o kargo
 
             chmod +x kargo
