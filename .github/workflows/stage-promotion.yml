@@ -222,15 +222,6 @@ jobs:
           echo "Kargo login completed."
 
           echo ""
-          echo "Kargo Projects:"
-          kargo get projects
-
-          echo ""
-          echo "Kargo Stages:"
-          kargo get stages \
-            --project "${PROJECT}"
-
-          echo ""
           echo "Kargo login and discovery successful."
 
 
