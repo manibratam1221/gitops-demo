@@ -218,6 +218,12 @@ jobs:
           echo "Kargo Authentication"
           echo "=============================================="
 
+          echo "Kargo server:"
+          echo "${{ secrets.KARGO_SERVER }}"
+
+          echo ""
+          echo "Logging into Kargo..."
+          
           kargo login \
             "${{ secrets.KARGO_SERVER }}" \
             --kubeconfig \
