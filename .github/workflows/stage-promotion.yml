@@ -356,6 +356,12 @@ jobs:
 
           echo "FREIGHT_NAME=${FREIGHT_NAME}" >> "${GITHUB_ENV}"
 
+          kargo update freight \
+            --project "${PROJECT}" \
+            --name "${FREIGHT_NAME}" \
+            --new-alias "${RELEASE_ID}"
+
+          echo "✅ Freight alias updated successfully."
 
       # ============================================================
       # 7. Display release information
