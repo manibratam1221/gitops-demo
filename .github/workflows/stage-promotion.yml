@@ -34,6 +34,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
       # ============================================================
       # 2. Verify Kubernetes connectivity
       # ============================================================
@@ -66,6 +67,7 @@ jobs:
           echo ""
           echo "Kargo pods:"
           kubectl get pods -n kargo
+
 
       # ============================================================
       # 3. Install exact Kargo CLI version
@@ -205,6 +207,7 @@ jobs:
           echo ""
           echo "Kargo CLI version verified successfully."
 
+
       # ============================================================
       # 4. Authenticate with Kargo
       # ============================================================
@@ -254,6 +257,7 @@ jobs:
           echo "✅ Kargo authentication successful."
           echo "✅ Project access verified."
 
+
       # ============================================================
       # 5. Capture Git release identity
       # ============================================================
@@ -276,6 +280,7 @@ jobs:
 
           echo "COMMIT_SHA=${COMMIT_SHA}" >> "${GITHUB_ENV}"
           echo "RELEASE_ID=${RELEASE_ID}" >> "${GITHUB_ENV}"
+
 
       # ============================================================
       # 6. Find Freight containing the Git commit
@@ -315,20 +320,19 @@ jobs:
                 --project "${PROJECT}" \
                 -o json |
               jq -r \
-               --arg SHA "${COMMIT_SHA}" '
-                 .items[]
-                 | select(
-                     any(
-                      (.spec.commits // .commits // [])[];
-                       .id == $SHA
-                     )
-                  )
-                | .metadata.name
-              ' |
-          head -n 1
-        )"
-            
-            
+                --arg SHA "${COMMIT_SHA}" '
+                  .items[]
+                  | select(
+                      any(
+                        (.spec.commits // .commits // [])[];
+                        .id == $SHA
+                      )
+                    )
+                  | .metadata.name
+                ' |
+              head -n 1
+            )"
+
             if [[ -n "${FREIGHT_NAME}" ]]; then
               break
             fi
@@ -352,6 +356,7 @@ jobs:
 
           echo "FREIGHT_NAME=${FREIGHT_NAME}" >> "${GITHUB_ENV}"
 
+
       # ============================================================
       # 7. Display release information
       # ============================================================
@@ -372,6 +377,7 @@ jobs:
           echo "Freight           : ${FREIGHT_NAME}"
           echo "GitHub Run        : ${GITHUB_RUN_ID}"
           echo "GitHub Run Number : ${GITHUB_RUN_NUMBER}"
+
 
       # ============================================================
       # 8. Promote Freight
@@ -398,6 +404,7 @@ jobs:
 
           echo ""
           echo "Kargo promotion request submitted."
+
 
       # ============================================================
       # 9. Wait for Promotion
@@ -454,6 +461,7 @@ jobs:
 
             echo ""
             echo "Current promotions:"
+
             kargo get promotions \
               --project "${PROJECT}" \
               --stage "${STAGE}"
@@ -474,6 +482,7 @@ jobs:
             "${PROMOTION_NAME}" \
             -n "${PROJECT}" \
             -o yaml
+
 
       # ============================================================
       # 10. Wait for Promotion Succeeded
@@ -512,6 +521,7 @@ jobs:
             phase: .status.phase,
             message: .status.message
           }'
+
 
       # ============================================================
       # 11. Verify Argo CD Application
@@ -563,6 +573,7 @@ jobs:
           echo ""
           echo "✅ Argo CD application is Healthy and Synced."
 
+
       # ============================================================
       # 12. Release Summary
       # ============================================================
@@ -578,6 +589,7 @@ jobs:
           echo "              RELEASE SUCCESS"
           echo "================================================"
           echo ""
+
           echo "Release ID        : ${RELEASE_ID}"
           echo "Project           : ${PROJECT}"
           echo "Stage             : ${STAGE}"
@@ -587,11 +599,14 @@ jobs:
           echo "Argo Application  : ${ARGO_APPLICATION}"
           echo "GitHub Run        : ${GITHUB_RUN_ID}"
           echo ""
+
           echo "Kargo Promotion   : SUCCEEDED"
           echo "Argo Sync          : SYNCED"
           echo "Argo Health        : HEALTHY"
           echo ""
+
           echo "================================================"
+
 
       # ============================================================
       # 13. Failure Summary
@@ -606,6 +621,7 @@ jobs:
           echo "              RELEASE FAILED"
           echo "================================================"
           echo ""
+
           echo "Release ID        : ${RELEASE_ID:-unknown}"
           echo "Project           : ${PROJECT}"
           echo "Stage             : ${STAGE}"
@@ -615,6 +631,8 @@ jobs:
           echo "Argo Application  : ${ARGO_APPLICATION}"
           echo "GitHub Run        : ${GITHUB_RUN_ID}"
           echo ""
+
           echo "Check the failed workflow step above."
           echo ""
+
           echo "================================================"
