@@ -315,19 +315,20 @@ jobs:
                 --project "${PROJECT}" \
                 -o json |
               jq -r \
-                --arg SHA "${COMMIT_SHA}" '
-                  .items[]
-                  | select(
-                      any(
-                        (.status.commits // [])[];
-                        .id == $SHA
-                      )
-                    )
-                  | .metadata.name
-                ' |
-              head -n 1
-            )"
-
+               --arg SHA "${COMMIT_SHA}" '
+                 .items[]
+                 | select(
+                     any(
+                      (.spec.commits // .commits // [])[];
+                       .id == $SHA
+                     )
+                  )
+                | .metadata.name
+              ' |
+          head -n 1
+        )"
+            
+            
             if [[ -n "${FREIGHT_NAME}" ]]; then
               break
             fi
