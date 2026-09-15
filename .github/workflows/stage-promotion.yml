@@ -8,6 +8,7 @@ on:
       - "stage/**"
 
 jobs:
+
   promote:
 
     runs-on: self-hosted
@@ -26,16 +27,17 @@ jobs:
 
     steps:
 
-      # ------------------------------------------------------------
+      # ============================================================
       # 1. Checkout
-      # ------------------------------------------------------------
+      # ============================================================
 
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ------------------------------------------------------------
-      # 2. Verify Kubernetes connectivity
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 2. Verify Kubernetes / Kargo connectivity
+      # ============================================================
 
       - name: Verify Cluster Connectivity
         shell: bash
@@ -46,119 +48,214 @@ jobs:
           echo "Cluster Connectivity"
           echo "=============================================="
 
+          echo "Kubectl:"
           kubectl version --client
+
+          echo ""
+          echo "Kubernetes Nodes:"
           kubectl get nodes
 
           echo ""
-          echo "Kargo Stages:"
+          echo "Kargo Stage:"
           kubectl get stages \
             -n "${PROJECT}"
 
           echo ""
-          echo "Kargo Freight:"
+          echo "Available Freight:"
           kubectl get freight \
             -n "${PROJECT}"
 
           echo ""
-          echo "=============================================="
+          echo "Connectivity verification successful."
 
-      # ------------------------------------------------------------
-      # 3. Install / verify Kargo CLI
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 3. Install EXACT Kargo CLI version
+      # ============================================================
 
       - name: Install Kargo CLI
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Installing Kargo CLI ${KARGO_VERSION}"
+          echo "=============================================="
+          echo "Kargo CLI Installation"
+          echo "=============================================="
 
-          OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          echo "Required Kargo version: ${KARGO_VERSION}"
+
+          OS="$(uname -s)"
           ARCH="$(uname -m)"
 
-          case "${ARCH}" in
-            x86_64)
-              ARCH="amd64"
-              ;;
-            aarch64|arm64)
-              ARCH="arm64"
-              ;;
-            *)
-              echo "Unsupported architecture: ${ARCH}"
-              exit 1
-              ;;
-          esac
+          echo "Runner OS        : ${OS}"
+          echo "Runner ARCH      : ${ARCH}"
+
+          # --------------------------------------------------------
+          # Detect OS
+          # --------------------------------------------------------
 
           case "${OS}" in
-            linux)
-              OS="linux"
+            Darwin)
+              KARGO_OS="darwin"
               ;;
-            darwin)
-              OS="darwin"
+            Linux)
+              KARGO_OS="linux"
               ;;
             *)
-              echo "Unsupported operating system: ${OS}"
+              echo "ERROR: Unsupported operating system: ${OS}"
               exit 1
               ;;
           esac
 
-          KARGO_URL="https://github.com/akuity/kargo/releases/download/v${KARGO_VERSION}/kargo-${OS}-${ARCH}"
+          # --------------------------------------------------------
+          # Detect architecture
+          # --------------------------------------------------------
 
-          echo "Downloading:"
+          case "${ARCH}" in
+            arm64|aarch64)
+              KARGO_ARCH="arm64"
+              ;;
+            x86_64|amd64)
+              KARGO_ARCH="amd64"
+              ;;
+            *)
+              echo "ERROR: Unsupported architecture: ${ARCH}"
+              exit 1
+              ;;
+          esac
+
+          echo "Kargo OS         : ${KARGO_OS}"
+          echo "Kargo ARCH       : ${KARGO_ARCH}"
+
+          # --------------------------------------------------------
+          # Install into runner-local bin
+          #
+          # Do NOT depend on whatever version is already installed
+          # on the self-hosted runner.
+          # --------------------------------------------------------
+
+          KARGO_BIN_DIR="${HOME}/bin"
+
+          mkdir -p "${KARGO_BIN_DIR}"
+
+          echo "${KARGO_BIN_DIR}" >> "${GITHUB_PATH}"
+
+          KARGO_URL="https://github.com/akuity/kargo/releases/download/v${KARGO_VERSION}/kargo-${KARGO_OS}-${KARGO_ARCH}"
+
+          echo "Kargo download URL:"
           echo "${KARGO_URL}"
 
-          curl -fL \
+          TEMP_KARGO="$(mktemp)"
+
+          echo ""
+          echo "Downloading Kargo CLI..."
+
+          curl \
+            --fail \
+            --show-error \
+            --location \
             "${KARGO_URL}" \
-            -o /tmp/kargo
+            --output "${TEMP_KARGO}"
 
-          chmod +x /tmp/kargo
+          chmod +x "${TEMP_KARGO}"
 
-          sudo mv /tmp/kargo /usr/local/bin/kargo
+          mv "${TEMP_KARGO}" "${KARGO_BIN_DIR}/kargo"
+
+          echo ""
+          echo "Installed binary:"
+          ls -lh "${KARGO_BIN_DIR}/kargo"
 
           echo ""
           echo "Kargo CLI version:"
+          "${KARGO_BIN_DIR}/kargo" version
+
+          # --------------------------------------------------------
+          # Verify exact version
+          # --------------------------------------------------------
+
+          ACTUAL_VERSION="$(
+            "${KARGO_BIN_DIR}/kargo" version \
+              | awk '/Client Version:/ {print $3}'
+          )"
+
+          echo ""
+          echo "Expected version : ${KARGO_VERSION}"
+          echo "Actual version   : ${ACTUAL_VERSION}"
+
+          if [[ "${ACTUAL_VERSION}" != "${KARGO_VERSION}" ]]; then
+            echo ""
+            echo "ERROR: Kargo CLI version mismatch."
+            echo "Expected: ${KARGO_VERSION}"
+            echo "Actual  : ${ACTUAL_VERSION}"
+            exit 1
+          fi
+
+          echo ""
+          echo "Kargo CLI version verified successfully."
+
+
+      # ============================================================
+      # 4. Login to Kargo
+      # ============================================================
+
+      - name: Login to Kargo
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=============================================="
+          echo "Kargo Login"
+          echo "=============================================="
+
+          echo "Kargo CLI:"
           kargo version
 
-      # ------------------------------------------------------------
-      # 4. Login to Kargo
-      # ------------------------------------------------------------
-      - name: Login to Kargo
-        run: |
-         set -euo pipefail
-         echo "Kargo CLI:"
-         kargo version
+          echo ""
+          echo "Logging into Kargo..."
 
-         echo "Logging into Kargo..."
-         kargo login \
-          "${{ secrets.KARGO_SERVER }}" \
-          --kubeconfig \
-          --insecure-skip-tls-verify
+          kargo login \
+            "${{ secrets.KARGO_SERVER }}" \
+            --kubeconfig \
+            --insecure-skip-tls-verify
 
-         echo "Kargo authentication successful"
+          echo ""
+          echo "Kargo login completed."
 
-         echo "Available projects:"
-         kargo get projects
+          echo ""
+          echo "Kargo Projects:"
+          kargo get projects
 
-         echo "Stages in ${PROJECT}:"
-         kargo get stages --project "${PROJECT}"
+          echo ""
+          echo "Kargo Stages:"
+          kargo get stages \
+            --project "${PROJECT}"
 
-      # ------------------------------------------------------------
-      # 5. Save commit SHA
-      # ------------------------------------------------------------
+          echo ""
+          echo "Kargo login and discovery successful."
+
+
+      # ============================================================
+      # 5. Capture Git commit
+      # ============================================================
 
       - name: Save Commit SHA
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "COMMIT_SHA=${GITHUB_SHA}" >> "${GITHUB_ENV}"
+          COMMIT_SHA="${GITHUB_SHA}"
 
-          echo "Commit SHA:"
-          echo "${GITHUB_SHA}"
+          echo "COMMIT_SHA=${COMMIT_SHA}" >> "${GITHUB_ENV}"
 
-      # ------------------------------------------------------------
-      # 6. Generate release identity
-      # ------------------------------------------------------------
+          echo "=============================================="
+          echo "Release Commit"
+          echo "=============================================="
+          echo "Commit SHA: ${COMMIT_SHA}"
+
+
+      # ============================================================
+      # 6. Generate stable release identity
+      # ============================================================
 
       - name: Generate Release Identity
         shell: bash
@@ -169,38 +266,46 @@ jobs:
 
           echo "RELEASE_ID=${RELEASE_ID}" >> "${GITHUB_ENV}"
 
-          echo "Release Identity:"
-          echo "${RELEASE_ID}"
+          echo "=============================================="
+          echo "Release Identity"
+          echo "=============================================="
+          echo "Release ID: ${RELEASE_ID}"
 
-      # ------------------------------------------------------------
-      # 7. Find Freight matching Git SHA
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 7. Wait for Freight matching this Git SHA
+      # ============================================================
 
       - name: Wait for Matching Freight
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Waiting for Freight for commit:"
-          echo "${COMMIT_SHA}"
+          echo "=============================================="
+          echo "Waiting for Kargo Freight"
+          echo "=============================================="
+
+          echo "Project : ${PROJECT}"
+          echo "Stage   : ${STAGE}"
+          echo "Git SHA : ${COMMIT_SHA}"
 
           ATTEMPTS=30
 
-          until [ "${ATTEMPTS}" -eq 0 ]
-          do
+          while [[ "${ATTEMPTS}" -gt 0 ]]; do
 
             FREIGHT="$(
               kubectl get freight \
                 -n "${PROJECT}" \
                 -o json \
-                | jq -r --arg SHA "${COMMIT_SHA}" '
-                    .items[]
-                    | select(
-                        any(.commits[]?; .id == $SHA)
-                      )
-                    | .metadata.name
-                  ' \
-                | head -n1
+              | jq -r \
+                --arg SHA "${COMMIT_SHA}" '
+                  .items[]
+                  | select(
+                      any(.commits[]?; .id == $SHA)
+                    )
+                  | .metadata.name
+                ' \
+              | head -n1
             )"
 
             if [[ -n "${FREIGHT}" ]]; then
@@ -214,23 +319,31 @@ jobs:
               exit 0
             fi
 
-            echo "No matching Freight yet..."
+            echo "No matching Freight yet."
             echo "Attempts remaining: ${ATTEMPTS}"
 
             ATTEMPTS=$((ATTEMPTS - 1))
 
             sleep 10
+
           done
 
           echo ""
-          echo "Timed out waiting for Freight."
-          echo "Commit SHA: ${COMMIT_SHA}"
+          echo "ERROR: Timed out waiting for Freight."
+          echo "Commit: ${COMMIT_SHA}"
+
+          echo ""
+          echo "Recent Freight:"
+          kubectl get freight \
+            -n "${PROJECT}" \
+            -o wide
 
           exit 1
 
-      # ------------------------------------------------------------
-      # 8. Display release information
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 8. Display release identity
+      # ============================================================
 
       - name: Display Release Information
         shell: bash
@@ -239,7 +352,7 @@ jobs:
 
           echo ""
           echo "=============================================="
-          echo "          PRODUCTION RELEASE"
+          echo "              PRODUCTION RELEASE"
           echo "=============================================="
           echo "Release ID : ${RELEASE_ID}"
           echo "Git SHA    : ${COMMIT_SHA}"
@@ -249,20 +362,23 @@ jobs:
           echo "=============================================="
           echo ""
 
-      # ------------------------------------------------------------
+
+      # ============================================================
       # 9. Promote Freight
-      # ------------------------------------------------------------
+      # ============================================================
 
       - name: Promote Freight
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Promoting Freight:"
-          echo "${FREIGHT_NAME}"
+          echo "=============================================="
+          echo "Kargo Promotion"
+          echo "=============================================="
 
-          echo "Target Stage:"
-          echo "${STAGE}"
+          echo "Project : ${PROJECT}"
+          echo "Stage   : ${STAGE}"
+          echo "Freight : ${FREIGHT_NAME}"
 
           kargo promote \
             --project "${PROJECT}" \
@@ -271,53 +387,59 @@ jobs:
             --insecure-skip-tls-verify
 
           echo ""
-          echo "Kargo promotion request submitted."
+          echo "Promotion request submitted."
 
-      # ------------------------------------------------------------
+
+      # ============================================================
       # 10. Wait for Promotion
-      # ------------------------------------------------------------
+      # ============================================================
 
       - name: Wait for Promotion
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Waiting for Promotion..."
+          echo "=============================================="
+          echo "Waiting for Kargo Promotion"
+          echo "=============================================="
 
           PROMOTION=""
 
-          for i in {1..60}; do
+          for i in {1..30}; do
 
             PROMOTION="$(
               kubectl get promotions \
                 -n "${PROJECT}" \
                 -o json \
-                | jq -r --arg F "${FREIGHT_NAME}" '
-                    .items
-                    | map(
-                        select(
-                          .spec.freight == $F
-                        )
-                      )
-                    | sort_by(.metadata.creationTimestamp)
-                    | last
-                    | .metadata.name
-                  '
+              | jq -r \
+                --arg F "${FREIGHT_NAME}" '
+                  .items
+                  | map(
+                      select(.spec.freight == $F)
+                    )
+                  | sort_by(.metadata.creationTimestamp)
+                  | last
+                  | .metadata.name
+                '
             )"
 
             if [[ -n "${PROMOTION}" && "${PROMOTION}" != "null" ]]; then
-              echo ""
+
               echo "Promotion found:"
               echo "${PROMOTION}"
+
               break
             fi
 
-            echo "Promotion not created yet..."
+            echo "Promotion not created yet."
+            echo "Attempt: ${i}/30"
+
             sleep 2
 
           done
 
           if [[ -z "${PROMOTION}" || "${PROMOTION}" == "null" ]]; then
+
             echo ""
             echo "ERROR: Promotion was not created."
 
@@ -340,20 +462,27 @@ jobs:
           echo ""
           echo "Promotion succeeded."
 
-          kubectl get promotion "${PROMOTION}" \
+          echo ""
+          echo "Promotion details:"
+
+          kubectl get promotion \
+            "${PROMOTION}" \
             -n "${PROJECT}" \
             -o wide
 
-          echo "PROMOTION_NAME=${PROMOTION}" >> "${GITHUB_ENV}"
 
-      # ------------------------------------------------------------
+      # ============================================================
       # 11. Verify Argo CD
-      # ------------------------------------------------------------
+      # ============================================================
 
-      - name: Verify Argo CD
+      - name: Verify ArgoCD
         shell: bash
         run: |
           set -euo pipefail
+
+          echo "=============================================="
+          echo "Argo CD Verification"
+          echo "=============================================="
 
           echo "Waiting for Argo CD application to become Healthy..."
 
@@ -363,52 +492,56 @@ jobs:
             --for=jsonpath='{.status.health.status}'=Healthy \
             --timeout=300s
 
-          SYNC="$(
+          SYNC_STATUS="$(
             kubectl get application prod-app \
               -n argocd \
               -o jsonpath='{.status.sync.status}'
           )"
 
-          HEALTH="$(
+          HEALTH_STATUS="$(
             kubectl get application prod-app \
               -n argocd \
               -o jsonpath='{.status.health.status}'
           )"
 
-          REVISION="$(
-            kubectl get application prod-app \
-              -n argocd \
-              -o jsonpath='{.status.sync.revision}'
-          )"
-
           echo ""
-          echo "Argo CD Status:"
-          echo "Application : prod-app"
-          echo "Sync        : ${SYNC}"
-          echo "Health      : ${HEALTH}"
-          echo "Revision    : ${REVISION}"
+          echo "Argo CD Application : prod-app"
+          echo "Health Status       : ${HEALTH_STATUS}"
+          echo "Sync Status         : ${SYNC_STATUS}"
 
-          if [[ "${SYNC}" != "Synced" ]]; then
+          if [[ "${SYNC_STATUS}" != "Synced" ]]; then
+
             echo ""
             echo "ERROR: Application is not Synced."
+
+            kubectl get application prod-app \
+              -n argocd \
+              -o yaml
+
             exit 1
           fi
 
-          if [[ "${HEALTH}" != "Healthy" ]]; then
+          if [[ "${HEALTH_STATUS}" != "Healthy" ]]; then
+
             echo ""
             echo "ERROR: Application is not Healthy."
+
+            kubectl get application prod-app \
+              -n argocd \
+              -o yaml
+
             exit 1
           fi
 
           echo ""
           echo "Argo CD application is Healthy and Synced."
 
-      # ------------------------------------------------------------
+
+      # ============================================================
       # 12. Release Summary
-      # ------------------------------------------------------------
+      # ============================================================
 
       - name: Release Summary
-        if: success()
         shell: bash
         run: |
           set -euo pipefail
@@ -417,19 +550,24 @@ jobs:
           echo "================================================"
           echo "        PRODUCTION RELEASE SUCCESSFUL"
           echo "================================================"
+          echo ""
           echo "Release ID : ${RELEASE_ID}"
           echo "Git SHA    : ${COMMIT_SHA}"
           echo "Freight    : ${FREIGHT_NAME}"
-          echo "Promotion  : ${PROMOTION_NAME}"
+          echo "Project    : ${PROJECT}"
           echo "Stage      : ${STAGE}"
           echo "Argo App   : prod-app"
-          echo "Status     : Healthy / Synced"
+          echo "Argo Sync  : Synced"
+          echo "Argo Health: Healthy"
+          echo "Status     : SUCCESS"
+          echo ""
           echo "================================================"
           echo ""
 
-      # ------------------------------------------------------------
-      # 13. Release Failure Summary
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 13. Failure Summary
+      # ============================================================
 
       - name: Release Failure Summary
         if: failure()
@@ -437,23 +575,37 @@ jobs:
         run: |
           echo ""
           echo "================================================"
-          echo "        PRODUCTION RELEASE FAILED"
-          echo "================================================"
-          echo "Release ID : ${RELEASE_ID:-unknown}"
-          echo "Git SHA    : ${COMMIT_SHA:-unknown}"
-          echo "Freight    : ${FREIGHT_NAME:-unknown}"
-          echo "Promotion  : ${PROMOTION_NAME:-unknown}"
-          echo "Stage      : ${STAGE}"
+          echo "          PRODUCTION RELEASE FAILED"
           echo "================================================"
           echo ""
 
-          echo "Kargo Promotions:"
+          echo "Release ID : ${RELEASE_ID:-not-created}"
+          echo "Git SHA    : ${COMMIT_SHA:-not-created}"
+          echo "Freight    : ${FREIGHT_NAME:-not-found}"
+          echo "Project    : ${PROJECT}"
+          echo "Stage      : ${STAGE}"
+
+          echo ""
+          echo "Kargo Stage:"
+          kubectl get stage \
+            "${STAGE}" \
+            -n "${PROJECT}" \
+            -o wide \
+            2>/dev/null || true
+
+          echo ""
+          echo "Recent Promotions:"
           kubectl get promotions \
             -n "${PROJECT}" \
-            -o wide || true
+            -o wide \
+            2>/dev/null || true
 
           echo ""
           echo "Argo CD Application:"
           kubectl get application prod-app \
             -n argocd \
-            -o wide || true
+            -o wide \
+            2>/dev/null || true
+
+          echo ""
+          echo "================================================"
