@@ -240,13 +240,15 @@ jobs:
           echo ""
           echo "Testing authenticated Kargo API access..."
 
-          kargo get projects
+          kargo get projects \
+            --insecure-skip-tls-verify
 
           echo ""
           echo "Kargo stages:"
 
           kargo get stages \
-            --project "${PROJECT}"
+            --project "${PROJECT}" \
+            --insecure-skip-tls-verify
 
           echo ""
           echo "✅ Kargo authentication successful."
